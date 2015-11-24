@@ -1962,7 +1962,7 @@ function _load(config) {
             var modules = config["modules"] || [];
             var moduleMap = modulesJson["module"];
             var jsList = [];
-            if (cc.sys.supportWebGL && modules.indexOf("base4webgl") < 0) modules.splice(0, 0, "base4webgl");
+            if (cc.sys.capabilities["opengl"] && modules.indexOf("base4webgl") < 0) modules.splice(0, 0, "base4webgl");
             else if (modules.indexOf("core") < 0) modules.splice(0, 0, "core");
             for (var i = 0, li = modules.length; i < li; i++) {
                 var arr = _getJsListOfModule(moduleMap, modules[i], engineDir);
@@ -2132,8 +2132,11 @@ cc.game = /** @lends cc.game# */{
      * Pause the game.
      */
     pause: function () {
+        if (this._paused) return;
         this._paused = true;
-
+        // Pause audio engine
+        cc.audioEngine && cc.audioEngine._pausePlaying();
+        // Pause main loop
         if (this._intervalId)
             window.cancelAnimationFrame(this._intervalId);
         this._intervalId = 0;
@@ -2143,7 +2146,11 @@ cc.game = /** @lends cc.game# */{
      * Resume the game from pause.
      */
     resume: function () {
+        if (!this._paused) return;
         this._paused = false;
+        // Resume audio engine
+        cc.audioEngine && cc.audioEngine._resumePlaying();
+        // Resume main loop
         this._runMainLoop();
     },
 
@@ -2254,7 +2261,12 @@ cc.game = /** @lends cc.game# */{
         }
         else {
             if (config) {
-                cc.game.config = config;
+                if (typeof config === 'string') {
+                    if (!cc.game.config) this._loadConfig();
+                    cc.game.config[cc.game.CONFIG_KEY.id] = config;
+                } else {
+                    cc.game.config = config;
+                }
             }
             if (typeof onStart === 'function') {
                 cc.game.onStart = onStart;
@@ -2374,7 +2386,7 @@ cc.game = /** @lends cc.game# */{
             modules = config[CONFIG_KEY.modules];
 
         // Configs adjustment
-        config[CONFIG_KEY.showFPS] = config[CONFIG_KEY.showFPS] || true;
+        config[CONFIG_KEY.showFPS] = typeof config[CONFIG_KEY.showFPS] === 'undefined' ? true : config[CONFIG_KEY.showFPS];
         config[CONFIG_KEY.engineDir] = config[CONFIG_KEY.engineDir] || "frameworks/cocos2d-html5";
         if (config[CONFIG_KEY.debugMode] == null)
             config[CONFIG_KEY.debugMode] = 0;
@@ -2528,18 +2540,10 @@ cc.game = /** @lends cc.game# */{
         }
 
         cc.eventManager.addCustomListener(cc.game.EVENT_HIDE, function () {
-            cc.audioEngine._pausePlaying();
+            cc.game.pause();
         });
         cc.eventManager.addCustomListener(cc.game.EVENT_SHOW, function () {
-            cc.audioEngine._resumePlaying();
-        });
-
-        cc.eventManager.addCustomListener(cc.game.EVENT_SHOW, function () {
-            if(self._intervalId){
-                window.cancelAnimationFrame(self._intervalId);
-
-                self._runMainLoop();
-            }
+            cc.game.resume();
         });
     }
 };

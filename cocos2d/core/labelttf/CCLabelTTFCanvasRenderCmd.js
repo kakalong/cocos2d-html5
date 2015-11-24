@@ -197,7 +197,7 @@ cc.LabelTTF._firsrEnglish = /^[a-zA-Z0-9ÄÖÜäöüßéèçàùêâîôû]/;
             OffsetYArray.push(yOffset);
         }
         var tmpStatus = {
-            contextTransform:cc.v2f(dx,dy),
+            contextTransform:cc.p(dx,dy),
             xOffset:xOffset,
             OffsetYArray:OffsetYArray
         };
@@ -334,7 +334,7 @@ cc.LabelTTF._firsrEnglish = /^[a-zA-Z0-9ÄÖÜäöüßéèçàùêâîôû]/;
         }else if(locFlag & flags.textDirty)
             this._updateTexture();
 
-        if (locFlag & flags.transformDirty)                 //update the transform
+        if (cc._renderType === cc.game.RENDER_TYPE_WEBGL || locFlag & flags.transformDirty)
             this.transform(parentCmd);
     };
 

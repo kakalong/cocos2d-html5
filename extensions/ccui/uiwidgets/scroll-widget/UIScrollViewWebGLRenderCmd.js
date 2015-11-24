@@ -21,6 +21,8 @@
         cc.renderer._turnToCacheMode(currentID);
 
         ccui.Layout.WebGLRenderCmd.prototype.visit.call(this, parentCmd);
+        // Need to update children after do layout
+        node.updateChildren();
 
         this._dirtyFlag = 0;
         cc.renderer._turnToNormalMode();
