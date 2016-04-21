@@ -23,7 +23,7 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
  ****************************************************************************/
- 
+
 cc.g_NumberOfDraws = 0;
 
 cc.GLToClipTransform = function (transformOut) {
@@ -233,6 +233,7 @@ cc.Director = cc.Class.extend(/** @lends cc.Director# */{
         if (this._runningScene) {
             if (renderer.childrenOrderDirty === true) {
                 cc.renderer.clearRenderCommands();
+                cc.renderer.assignedZ = 0;
                 this._runningScene._renderCmd._curLevel = 0;                          //level start from 0;
                 this._runningScene.visit();
                 renderer.resetFlag();
@@ -495,7 +496,7 @@ cc.Director = cc.Class.extend(/** @lends cc.Director# */{
      * set color for clear screen.<br/>
      * Implementation can be found in CCDirectorCanvas.js/CCDirectorWebGL.js
      * @function
-     * @param {cc.color} clearColor
+     * @param {cc.Color} clearColor
      */
     setClearColor: null,
     /**
