@@ -75,11 +75,9 @@ cc.rendererCanvas = {
         for (i = 0, len = locCmds.length; i < len; i++) {
             locCmds[i].rendering(ctx, scaleX, scaleY);
         }
-        locCmds.length = 0;
-        var locIDs = this._cacheInstanceIds;
-        delete this._cacheToCanvasCmds[instanceID];
-        cc.arrayRemoveObject(locIDs, instanceID);
+        this._removeCache(instanceID);
 
+        var locIDs = this._cacheInstanceIds;
         if (locIDs.length === 0)
             this._isCacheToCanvasOn = false;
         else
@@ -97,6 +95,18 @@ cc.rendererCanvas = {
 
     _turnToNormalMode: function () {
         this._isCacheToCanvasOn = false;
+    },
+
+    _removeCache: function (instanceID) {
+        instanceID = instanceID || this._currentID;
+        var cmds = this._cacheToCanvasCmds[instanceID];
+        if (cmds) {
+            cmds.length = 0;
+            delete this._cacheToCanvasCmds[instanceID];
+        }
+
+        var locIDs = this._cacheInstanceIds;
+        cc.arrayRemoveObject(locIDs, instanceID);
     },
 
     resetFlag: function () {
@@ -151,7 +161,7 @@ cc.rendererCanvas = {
     },
 
     pushRenderCommand: function (cmd) {
-        if(!cmd._needDraw)
+        if(!cmd.needDraw())
             return;
         if (this._isCacheToCanvasOn) {
             var currentId = this._currentID, locCmdBuffer = this._cacheToCanvasCmds;

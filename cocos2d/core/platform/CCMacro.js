@@ -481,35 +481,21 @@ cc.checkGLErrorDebug = function () {
  * @constant
  * @type Number
  */
-cc.DEVICE_ORIENTATION_PORTRAIT = 0;
+cc.ORIENTATION_PORTRAIT = 1;
 
 /**
  * Device oriented horizontally, home button on the right (UIDeviceOrientationLandscapeLeft)
  * @constant
  * @type Number
  */
-cc.DEVICE_ORIENTATION_LANDSCAPE_LEFT = 1;
+cc.ORIENTATION_LANDSCAPE = 2;
 
 /**
  * Device oriented vertically, home button on the top (UIDeviceOrientationPortraitUpsideDown)
  * @constant
  * @type Number
  */
-cc.DEVICE_ORIENTATION_PORTRAIT_UPSIDE_DOWN = 2;
-
-/**
- * Device oriented horizontally, home button on the left (UIDeviceOrientationLandscapeRight)
- * @constant
- * @type Number
- */
-cc.DEVICE_ORIENTATION_LANDSCAPE_RIGHT = 3;
-
-/**
- * In browsers, we only support 2 orientations by change window size.
- * @constant
- * @type Number
- */
-cc.DEVICE_MAX_ORIENTATIONS = 2;
+cc.ORIENTATION_AUTO = 3;
 
 
 // ------------------- vertex attrib flags -----------------------------
@@ -562,26 +548,6 @@ cc.VERTEX_ATTRIB_COLOR = 1;
  * @type {Number}
  */
 cc.VERTEX_ATTRIB_TEX_COORDS = 2;
-/**
- * @constant
- * @type {Number}
- */
-cc.VERTEX_ATTRIB_MVMAT0 = 3;
-/**
- * @constant
- * @type {Number}
- */
-cc.VERTEX_ATTRIB_MVMAT1 = 4;
-/**
- * @constant
- * @type {Number}
- */
-cc.VERTEX_ATTRIB_MVMAT2 = 5;
-/**
- * @constant
- * @type {Number}
- */
-cc.VERTEX_ATTRIB_MVMAT3 = 6;
 /**
  * @constant
  * @type {Number}
@@ -645,17 +611,27 @@ cc.SHADER_POSITION_TEXTURECOLOR = "ShaderPositionTextureColor";
  * @constant
  * @type {String}
  */
+cc.SHADER_SPRITE_POSITION_TEXTURECOLOR = "ShaderSpritePositionTextureColor";
+/**
+ * @constant
+ * @type {String}
+ */
 cc.SHADER_POSITION_TEXTURECOLORALPHATEST = "ShaderPositionTextureColorAlphaTest";
 /**
  * @constant
  * @type {String}
  */
-cc.SHADER_POSITION_TEXTURECOLORALPHATEST_BATCHED = "ShaderPositionTextureColorAlphaTestBatched";
+cc.SHADER_SPRITE_POSITION_TEXTURECOLORALPHATEST = "ShaderSpritePositionTextureColorAlphaTest";
 /**
  * @constant
  * @type {String}
  */
 cc.SHADER_POSITION_COLOR = "ShaderPositionColor";
+/**
+ * @constant
+ * @type {String}
+ */
+cc.SHADER_SPRITE_POSITION_COLOR = "ShaderSpritePositionColor";
 /**
  * @constant
  * @type {String}

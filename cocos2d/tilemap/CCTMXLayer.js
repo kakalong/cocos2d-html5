@@ -849,8 +849,9 @@ cc.TMXLayer = cc.SpriteBatchNode.extend(/** @lends cc.TMXLayer# */{
                     cc.log("TMX invalid value");
                     break;
             }
-        } else
+        } else {
             ret = this._vertexZvalue;
+        }
         return ret;
     },
 

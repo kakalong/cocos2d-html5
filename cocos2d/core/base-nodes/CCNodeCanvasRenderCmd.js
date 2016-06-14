@@ -33,10 +33,13 @@ cc.CustomRenderCmd = function (target, func) {
             return;
         this._callback.call(this._target, ctx, scaleX, scaleY);
     };
+    this.needDraw = function () {
+        return this._needDraw;
+    };
 };
 
 cc.Node._dirtyFlags = {transformDirty: 1 << 0, visibleDirty: 1 << 1, colorDirty: 1 << 2, opacityDirty: 1 << 3, cacheDirty: 1 << 4,
-    orderDirty: 1 << 5, textDirty: 1 << 6, gradientDirty:1 << 7, all: (1 << 8) - 1};
+    orderDirty: 1 << 5, textDirty: 1 << 6, gradientDirty:1 << 7, textureDirty: 1 << 8, all: (1 << 9) - 1};
 
 //-------------------------Base -------------------------
 cc.Node.RenderCmd = function(renderable){
@@ -61,6 +64,10 @@ cc.Node.RenderCmd = function(renderable){
 
 cc.Node.RenderCmd.prototype = {
     constructor: cc.Node.RenderCmd,
+
+    needDraw: function () {
+        return this._needDraw;
+    },
 
     getAnchorPointInPoints: function(){
         return cc.p(this._anchorPointInPoints);
@@ -368,7 +375,7 @@ cc.Node.RenderCmd.prototype = {
         if(colorDirty || opacityDirty)
             this._updateColor();
 
-        if (cc._renderType === cc.game.RENDER_TYPE_WEBGL || locFlag & flags.transformDirty)
+        if (locFlag & flags.transformDirty)
             //update the transform
             this.transform(parentCmd, true);
 
@@ -395,9 +402,10 @@ cc.Node.RenderCmd.prototype = {
                 }
             }
 
-            var z = renderer.assignedZ;
-            node._vertexZ = z;
-            renderer.assignedZ += renderer.assignedZStep;
+            if (isNaN(node._customZ)) {
+                node._vertexZ = renderer.assignedZ;
+                renderer.assignedZ += renderer.assignedZStep;
+            }
 
             renderer.pushRenderCommand(this);
             for (; i < len; i++) {
@@ -405,8 +413,10 @@ cc.Node.RenderCmd.prototype = {
                 child._renderCmd.visit(this);
             }
         } else {
-            node._vertexZ = renderer.assignedZ;
-            renderer.assignedZ += renderer.assignedZStep;
+            if (isNaN(node._customZ)) {
+                node._vertexZ = renderer.assignedZ;
+                renderer.assignedZ += renderer.assignedZStep;
+            }
 
             renderer.pushRenderCommand(this);
         }

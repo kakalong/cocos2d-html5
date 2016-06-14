@@ -36,8 +36,10 @@ var CACHING_BUFFER = true;
 var ACTIVATE_AUTO_BATCH = true;
 
 // Internal variables
+    // Global vertex buffers, shared by sprites
+var _gbuffers = [],
     // Batching general informations
-var _batchedInfo = {
+    _batchedInfo = {
         // The batched texture, all batching element should have the same texture
         texture: null,
         // The batched blend source, all batching element should have the same blend source
@@ -71,6 +73,7 @@ function updateQuadIndexBuffer (numQuads) {
     if (!_quadIndexBuffer.buffer) {
         return;
     }
+    var gl = cc._renderContext;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, _quadIndexBuffer.buffer);
 
     var indices = new Uint16Array(numQuads * 6);
@@ -85,13 +88,14 @@ function updateQuadIndexBuffer (numQuads) {
         currentQuad += 4;
     }
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    _quadIndexBuffer.maxQuads = numQuads;
 }
 
 // Inspired from @Heishe's gotta-batch-them-all branch
 // https://github.com/Talisca/cocos2d-html5/commit/de731f16414eb9bcaa20480006897ca6576d362c
 function getQuadIndexBuffer (numQuads) {
     if (_quadIndexBuffer.buffer === null) {
-        _quadIndexBuffer.buffer = gl.createBuffer();
+        _quadIndexBuffer.buffer = cc._renderContext.createBuffer();
     }
 
     if (_quadIndexBuffer.maxQuads < numQuads) {
@@ -101,28 +105,38 @@ function getQuadIndexBuffer (numQuads) {
     return _quadIndexBuffer.buffer;
 }
 
-function createVirtualBuffer (buffer, vertexOffset, matrixOrigin, matrixOffset, totalBufferSize, count, data) {
-    data = data || new Uint32Array(totalBufferSize / 4);
+function createVirtualBuffer (buffer, vertexOffset, totalBufferSize, count, data) {
+    var float32View, uint32View;
+    if (data) {
+        float32View = new Float32Array(data, vertexOffset, totalBufferSize / 4);
+        uint32View = new Uint32Array(data, vertexOffset, totalBufferSize / 4);
+    }
+    else {
+        float32View = new Float32Array(totalBufferSize / 4);
+        uint32View = new Uint32Array(float32View.buffer);
+    }
     var vBuf = {
         // The object contains real WebGL buffers, it's created or retrieved via getBatchBuffer
         buffer: buffer,
-        // The vertex data array (Uint32Array)
-        dataArray: data,
+        // The vertex data array (Float32Array)
+        float32View: float32View,
+        // Uint32 view
+        uint32View: uint32View,
         // The start offset in the vertex buffer, in bytes
         vertexOffset: vertexOffset,
-        // The offset of all matrix data, in bytes
-        matrixOrigin: matrixOrigin,
-        // The start offset after the origin of matrix data in the vertex buffer, in bytes
-        matrixOffset: matrixOffset,
-        // Total vertex array buffer size, including vertex data and matrix data, in bytes
+        // Total vertex array buffer size, including vertex data, in bytes
         totalBufferSize: totalBufferSize,
         // Render command count
-        count: count
+        count: count,
+        // Valid flag, indicate whether the buffer is valid or not
+        valid: true
     };
     return vBuf;
 }
 
 return {
+    mat4Identity: null,
+
     childrenOrderDirty: true,
     assignedZ: 0,
     assignedZStep: 1/10000,
@@ -135,6 +149,37 @@ return {
     _cacheInstanceIds: [],
     _currentID: 0,
     _clearColor: cc.color(),                            //background color,default BLACK
+
+    init: function () {
+        this.mat4Identity = new cc.math.Matrix4();
+        this.mat4Identity.identity();
+        getQuadIndexBuffer(1000);
+    },
+
+    requestBuffer: function (size) {
+        var i, len = _gbuffers.length, buffer,
+            gl = cc._renderContext,
+            result;
+        for (i = 0; i < len; ++i) {
+            buffer = _gbuffers[i];
+            if (buffer.gl === gl) {
+                result = buffer.requestBuffer(size);
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        if (!result) {
+            buffer = new GlobalVertexBuffer(gl);
+            _gbuffers.push(buffer);
+            result = buffer.requestBuffer(size);
+        }
+        if (!result) {
+            cc.error('Request WebGL buffer failed');
+        }
+        return result;
+    },
 
     getRenderCmd: function (renderableObject) {
         //TODO Add renderCmd pool here
@@ -153,6 +198,18 @@ return {
         this._isCacheToBufferOn = false;
     },
 
+    _removeCache: function (instanceID) {
+        instanceID = instanceID || this._currentID;
+        var cmds = this._cacheToBufferCmds[instanceID];
+        if (cmds) {
+            cmds.length = 0;
+            delete this._cacheToBufferCmds[instanceID];
+        }
+
+        var locIDs = this._cacheInstanceIds;
+        cc.arrayRemoveObject(locIDs, instanceID);
+    },
+
     /**
      * drawing all renderer command to cache canvas' context
      * @param {Number} [renderTextureId]
@@ -160,14 +217,19 @@ return {
     _renderingToBuffer: function (renderTextureId) {
         renderTextureId = renderTextureId || this._currentID;
         var locCmds = this._cacheToBufferCmds[renderTextureId], i, len;
-        var ctx = cc._renderContext, locIDs = this._cacheInstanceIds;
+        var ctx = cc._renderContext;
+        // Update all global buffers (only invoke bufferSubData when buffer is dirty)
+        for (i = 0, len = _gbuffers.length; i < len; ++i) {
+            _gbuffers[i].update();
+        }
+        // Reset buffer cache to avoid issue
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
         for (i = 0, len = locCmds.length; i < len; i++) {
             locCmds[i].rendering(ctx);
         }
-        locCmds.length = 0;
-        delete this._cacheToBufferCmds[renderTextureId];
-        cc.arrayRemoveObject(locIDs, renderTextureId);
+        this._removeCache(renderTextureId);
 
+        var locIDs = this._cacheInstanceIds;
         if (locIDs.length === 0)
             this._isCacheToBufferOn = false;
         else
@@ -244,7 +306,7 @@ return {
     },
     
     pushRenderCommand: function (cmd) {
-        if(!cmd._needDraw)
+        if(!cmd.needDraw())
             return;
         if (this._isCacheToBufferOn) {
             var currentId = this._currentID, locCmdBuffer = this._cacheToBufferCmds;
@@ -316,9 +378,10 @@ return {
     _refreshVirtualBuffers: function () {
         var renderCmds = this._renderCmds,
             len = _prevRenderCmds.length,
+            currLen = renderCmds.length,
             i = 0, j = 0, end, cmd1, cmd2, next, 
             newBuf, currBuf,
-            startId, count;
+            startId, count, size;
 
         // Loop previous render command list to compare with current command list
         for (; i < len; ++i) {
@@ -326,10 +389,10 @@ return {
             currBuf = cmd1._vBuffer;
             matched = false;
             // Check to update virtual buffer
-            if (currBuf) {
+            if (currBuf && currBuf.valid) {
                 j = cmd1._currId;
                 // Removed from the command list
-                if (j < 0) {
+                if (j < 0 || j >= currLen) {
                     cmd1._vBuffer = null;
                     continue;
                 }
@@ -339,7 +402,7 @@ return {
                 count = 0;
                 // Remains in the command list
                 cmd2 = renderCmds[j];
-                while (cmd1 === cmd2 && cmd1._vBuffer === currBuf) {
+                while (cmd1 && cmd1 === cmd2 && cmd1._vBuffer === currBuf) {
                     ++count;
                     ++j;
                     cmd1 = _prevRenderCmds[i+count];
@@ -349,13 +412,16 @@ return {
 
                 // No valid batch
                 if (count <= 1) {
-                    // Set both in case cmd1 doesn't equal cmd2
-                    cmd1._vBuffer = cmd2._vBuffer = null;
+                    cmd1 = _prevRenderCmds[i];
+                    cmd1._vBuffer = null;
+                    if (cmd2) {
+                        cmd2._vBuffer = null;
+                    }
                     continue;
                 }
 
                 // The next command in the current list support batch
-                if (cmd2._supportBatch) {
+                if (cmd2 && cmd2._supportBatch) {
                     cmd2.getBatchInfo(_currentInfo);
                     if (_currentInfo.texture === _batchedInfo.texture &&
                         _currentInfo.blendSrc === _batchedInfo.blendSrc &&
@@ -365,6 +431,8 @@ return {
                         for (; i < end; ++i) {
                             _prevRenderCmds[i]._vBuffer = null;
                         }
+                        // keeping i correct, it should run through all elements
+                        i--;
                         continue;
                     }
                 }
@@ -377,16 +445,18 @@ return {
                 else if (count > 1) {
                     // First command in buffer
                     cmd1 = _prevRenderCmds[i];
+                    // cmd2 = _prevRenderCmds[i+count-1];
+                    size = count * cmd1.bytesPerUnit;
                     newBuf = createVirtualBuffer(currBuf.buffer, 
-                                                 cmd1._vertexOffset, 
-                                                 currBuf.matrixOrigin,
-                                                 cmd1._matrixOffset,
-                                                 currBuf.totalBufferSize, 
+                                                 cmd1._vertexOffset * 4, 
+                                                 size, 
                                                  count,
-                                                 currBuf.dataArray);
+                                                 currBuf.float32View.buffer);
                     for (; i < end; ++i) {
                         _prevRenderCmds[i]._vBuffer = newBuf;
                     }
+                    // keeping i correct, it should run through all elements
+                    i--;
                 }
             }
         }
@@ -429,34 +499,33 @@ return {
         _currentBuffer = null;
 
         // Protection, vbuffer invalid or doesn't match the command
-        if (cmd._vertexOffset !== vbuffer.vertexOffset || !vbuffer.buffer) {
+        if (cmd._vertexOffset !== vbuffer.vertexOffset || !vbuffer.valid || !vbuffer.buffer) {
             _bufferError = true;
             return 0;
         }
 
         // Forward check
-        var matrixBuffer, martixOrigin;
+        var vertexBuffer;
         for (; last < length; ++last) {
             cmd = renderCmds[last];
             if (vbuffer !== cmd._vBuffer) {
                 break;
             }
 
-            // Lazy update transform matrix in buffer
-            if (cmd._savedDirtyFlag) {
-                if (!matrixBuffer) {
+            // Lazy update vertex in buffer
+            if (cmd._bufferDirty) {
+                if (!vertexBuffer) {
                     // Bind buffer
-                    matrixBuffer = vbuffer;
-                    martixOrigin = matrixBuffer.matrixOrigin / 4;
-                    gl.bindBuffer(gl.ARRAY_BUFFER, matrixBuffer.buffer.arrayBuffer);
+                    vertexBuffer = vbuffer;
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer.buffer.arrayBuffer);
                 }
-                cmd.batchVertexBuffer(matrixBuffer.dataArray, cmd._vertexOffset, martixOrigin, cmd._matrixOffset);
-                cmd._savedDirtyFlag = false;
+                cmd.batchVertexBuffer(vertexBuffer.float32View, vertexBuffer.uint32View, cmd._vertexOffset);
+                cmd._bufferDirty = false;
             }
         }
         // Send last buffer to WebGLBuffer
-        if (matrixBuffer) {
-            gl.bufferSubData(gl.ARRAY_BUFFER, 0, matrixBuffer.dataArray);
+        if (vertexBuffer) {
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertexBuffer.float32View);
         }
 
         var size = last - first;
@@ -493,7 +562,6 @@ return {
         if (!_batchedInfo.texture)
             return 0;
 
-        var matrixOrigin = cmd.vertexBytesPerUnit;
         var totalBufferSize = cmd.bytesPerUnit;
 
         // Forward search and collect batch informations
@@ -513,7 +581,6 @@ return {
                 break;
             }
             else {
-                matrixOrigin += cmd.vertexBytesPerUnit;
                 totalBufferSize += cmd.bytesPerUnit;
             }
             ++last;
@@ -530,18 +597,14 @@ return {
 
         // Create a virtual buffer
         var vbuffer = createVirtualBuffer(buffer, 
-                                          0, 
-                                          matrixOrigin,
                                           0,
                                           totalBufferSize, 
                                           count);
         _currentBuffer = vbuffer;
-        var uploadBuffer = vbuffer.dataArray;
+        var uploadBuffer = vbuffer.float32View;
 
-        //all of the divisions by 4 are just because we work with uint32arrays instead of uint8 arrays so all indexes need to be shortened by the factor of 4
-        var totalVertexData = matrixOrigin / 4;
+        //all of the divisions by 4 are just because we work with Float32Arrays instead of uint8 arrays so all indexes need to be shortened by the factor of 4
         var vertexDataOffset = 0;
-        var matrixDataOffset = 0;
 
         // Bind vertex data buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, vbuffer.buffer.arrayBuffer);
@@ -550,19 +613,17 @@ return {
         var i;
         for (i = first; i < last; ++i) {
             cmd = renderCmds[i];
-            cmd.batchVertexBuffer(uploadBuffer, vertexDataOffset, totalVertexData, matrixDataOffset);
+            cmd.batchVertexBuffer(uploadBuffer, vbuffer.uint32View, vertexDataOffset);
 
             if (CACHING_BUFFER) {
                 cmd._vBuffer = vbuffer;
                 cmd._vertexOffset = vertexDataOffset;
-                cmd._matrixOffset = matrixDataOffset;
             }
             if (cmd._savedDirtyFlag) {
                 cmd._savedDirtyFlag = false;
             }
 
             vertexDataOffset += cmd.vertexBytesPerUnit / 4;
-            matrixDataOffset += cmd.matrixBytesPerUnit / 4;
         }
 
         // Submit vertex data in one bufferSubData call
@@ -593,28 +654,18 @@ return {
 
         gl.bindBuffer(gl.ARRAY_BUFFER, _currentBuffer.buffer.arrayBuffer);
 
-        cc.glEnableVertexAttribs(cc.VERTEX_ATTRIB_FLAG_POS_COLOR_TEX);
+        gl.enableVertexAttribArray(cc.VERTEX_ATTRIB_POSITION);
+        gl.enableVertexAttribArray(cc.VERTEX_ATTRIB_COLOR);
+        gl.enableVertexAttribArray(cc.VERTEX_ATTRIB_TEX_COORDS);
 
         var vertexOffset = _currentBuffer.vertexOffset;
-        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, vertexOffset);
-        gl.vertexAttribPointer(1, 4, gl.UNSIGNED_BYTE, true, 24, vertexOffset + 12);
-        gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 24, vertexOffset + 16);
-        
-        var i;
-        var matrixOffset = _currentBuffer.matrixOrigin + _currentBuffer.matrixOffset;
-        // Enable matrix vertex attribs row by row (vec4 * 4)
-        for (i = 0; i < 4; ++i) {
-            gl.enableVertexAttribArray(cc.VERTEX_ATTRIB_MVMAT0 + i);
-            gl.vertexAttribPointer(cc.VERTEX_ATTRIB_MVMAT0 + i, 4, gl.FLOAT, false, bytesPerRow * 4, matrixOffset + bytesPerRow * i); //stride is one row
-        }
+        gl.vertexAttribPointer(cc.VERTEX_ATTRIB_POSITION, 3, gl.FLOAT, false, 24, vertexOffset);
+        gl.vertexAttribPointer(cc.VERTEX_ATTRIB_COLOR, 4, gl.UNSIGNED_BYTE, true, 24, vertexOffset + 12);
+        gl.vertexAttribPointer(cc.VERTEX_ATTRIB_TEX_COORDS, 2, gl.FLOAT, false, 24, vertexOffset + 16);
 
         var elemBuffer = getQuadIndexBuffer(count);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elemBuffer);
         gl.drawElements(gl.TRIANGLES, count * 6, gl.UNSIGNED_SHORT, 0);
-
-        for (i = 0; i < 4; ++i) {
-            gl.disableVertexAttribArray(cc.VERTEX_ATTRIB_MVMAT0 + i);
-        }
 
         cc.g_NumberOfDraws++;
     },
@@ -628,12 +679,20 @@ return {
             i, len, cmd, next, batchCount,
             context = ctx || cc._renderContext;
 
+        // Update all global buffers (only invoke bufferData when buffer is dirty)
+        for (i = 0, len = _gbuffers.length; i < len; ++i) {
+            _gbuffers[i].update();
+        }
+
         // Only update virtual buffers if children order dirty in the current frame
         if (ACTIVATE_AUTO_BATCH && (_orderDirtyInFrame || _bufferError)) {
             this._refreshVirtualBuffers();
         }
 
-        for (i = 0, len = locCmds.length; i < len; i++) {
+        // Reset buffer for rendering
+        context.bindBuffer(gl.ARRAY_BUFFER, null);
+
+        for (i = 0, len = locCmds.length; i < len; ++i) {
             cmd = locCmds[i];
             next = locCmds[i+1];
 

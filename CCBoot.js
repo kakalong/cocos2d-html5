@@ -586,6 +586,7 @@ cc.loader = (function () {
         _register = {}, //register of loaders
         _langPathCache = {}, //cache for lang path
         _aliases = {}, //aliases for res url
+        _queue = {}, // Callback queue for resources already loading
         _urlRegExp = new RegExp(
             "^" +
                 // protocol identifier
@@ -666,6 +667,10 @@ cc.loader = (function () {
                 results[2] = a2;
             } else throw new Error("arguments error to load js!");
             return results;
+        },
+
+        isLoading: function (url) {
+            return (_queue[url] !== undefined);
         },
 
         /**
@@ -880,7 +885,7 @@ cc.loader = (function () {
                 isCrossOrigin: true
             };
             if (callback !== undefined)
-                opt.isCrossOrigin = option.isCrossOrigin === null ? opt.isCrossOrigin : option.isCrossOrigin;
+                opt.isCrossOrigin = option.isCrossOrigin === undefined ? opt.isCrossOrigin : option.isCrossOrigin;
             else if (option !== undefined)
                 callback = option;
 
@@ -888,6 +893,12 @@ cc.loader = (function () {
             if (img) {
                 callback && callback(null, img);
                 return img;
+            }
+
+            var queue = _queue[url];
+            if (queue) {
+                queue.callbacks.push(callback);
+                return queue.img;
             }
 
             img = new Image();
@@ -898,22 +909,51 @@ cc.loader = (function () {
                 this.removeEventListener('load', loadCallback, false);
                 this.removeEventListener('error', errorCallback, false);
 
-                cc.loader.cache[url] = img;
-                if (callback)
-                    callback(null, img);
+                if (!_urlRegExp.test(url)) {
+                    cc.loader.cache[url] = img;
+                }
+
+                var queue = _queue[url];
+                if (queue) {
+                    callbacks = queue.callbacks;
+                    for (var i = 0; i < callbacks.length; ++i) {
+                        var cb = callbacks[i];
+                        if (cb) {
+                            cb(null, img);
+                        }
+                    }
+                    queue.img = null;
+                    delete _queue[url];
+                }
             };
 
             var self = this;
             var errorCallback = function () {
                 this.removeEventListener('error', errorCallback, false);
 
-                if(img.crossOrigin && img.crossOrigin.toLowerCase() === "anonymous"){
+                if (img.crossOrigin && img.crossOrigin.toLowerCase() === "anonymous") {
                     opt.isCrossOrigin = false;
                     self.release(url);
                     cc.loader.loadImg(url, opt, callback);
-                }else{
-                    typeof callback === "function" && callback("load image failed");
+                } else {
+                    var queue = _queue[url];
+                    if (queue) {
+                        callbacks = queue.callbacks;
+                        for (var i = 0; i < callbacks.length; ++i) {
+                            var cb = callbacks[i];
+                            if (cb) {
+                                cb("load image failed");
+                            }
+                        }
+                        queue.img = null;
+                        delete _queue[url];
+                    }
                 }
+            };
+
+            _queue[url] = {
+                img: img,
+                callbacks: callback ? [callback] : []
             };
 
             img.addEventListener("load", loadCallback);
@@ -1140,6 +1180,11 @@ cc.loader = (function () {
          */
         release: function (url) {
             var cache = this.cache;
+            var queue = _queue[url];
+            if (queue) {
+                queue.img = null;
+                delete _queue[url];
+            }
             delete cache[url];
             delete cache[_aliases[url]];
             delete _aliases[url];
@@ -1375,7 +1420,7 @@ var _initSys = function () {
      * @constant
      * @type {Number}
      */
-    sys.LANGUAGE_UNKNOWN = "unknown";
+    sys.LANGUAGE_UNKNOWN = "unkonwn";
 
     /**
      * @memberof cc.sys
@@ -1803,29 +1848,43 @@ var _initSys = function () {
 
     var _supportCanvas = !!_tmpCanvas1.getContext("2d");
     var _supportWebGL = false;
-    var tmpCanvas = document.createElement("CANVAS");
     if (win.WebGLRenderingContext) {
+        var tmpCanvas = document.createElement("CANVAS");
         try{
             var context = cc.create3DContext(tmpCanvas, {'stencil': true, 'preserveDrawingBuffer': true });
             if(context) {
                 _supportWebGL = true;
             }
 
-            // Accept only Android 5+ default browser and QQ Browser 6.2+
             if (_supportWebGL && sys.os === sys.OS_ANDROID) {
-                _supportWebGL = false;
-                // QQ Brwoser 6.2+
-                var browserVer = parseFloat(sys.browserVersion);
-                if (sys.browserType === sys.BROWSER_TYPE_MOBILE_QQ && browserVer >= 6.2) {
-                    _supportWebGL = true;
-                }
-                // Android 5+ default browser
-                else if (sys.osMainVersion && sys.osMainVersion >= 5 && sys.browserType === sys.BROWSER_TYPE_ANDROID) {
-                    _supportWebGL = true;
+                switch (sys.browserType) {
+                case sys.BROWSER_TYPE_MOBILE_QQ:
+                case sys.BROWSER_TYPE_BAIDU:
+                case sys.BROWSER_TYPE_BAIDU_APP:
+                    // QQ & Baidu Brwoser 6.2+ (using blink kernel)
+                    var browserVer = parseFloat(sys.browserVersion);
+                    if (browserVer >= 6.2) {
+                        _supportWebGL = true;
+                    }
+                    else {
+                        _supportWebGL = false;
+                    }
+                    break;
+                case sys.BROWSER_TYPE_ANDROID:
+                    // Android 5+ default browser
+                    if (sys.osMainVersion && sys.osMainVersion >= 5) {
+                        _supportWebGL = true;
+                    }
+                    break;
+                case sys.BROWSER_TYPE_UNKNOWN:
+                case sys.BROWSER_TYPE_360:
+                case sys.BROWSER_TYPE_MIUI:
+                    _supportWebGL = false;
                 }
             }
         }
         catch (e) {}
+        tmpCanvas = null;
     }
 
     /**
@@ -1935,6 +1994,9 @@ var _initSys = function () {
     };
 };
 _initSys();
+
+_tmpCanvas1 = null;
+_tmpCanvas2 = null;
 
 //to make sure the cc.log, cc.warn, cc.error and cc.assert would not throw error before init by debugger mode.
 cc.log = cc.warn = cc.error = cc.assert = function () {
@@ -2068,7 +2130,7 @@ cc.initEngine = function (config, cb) {
 
     document.body ? _load(config) : cc._addEventListener(window, 'load', _windowLoaded, false);
     _engineInitCalled = true;
-}
+};
 
 })();
 //+++++++++++++++++++++++++Engine initialization function end+++++++++++++++++++++++++++++
@@ -2296,6 +2358,13 @@ cc.game = /** @lends cc.game# */{
         cc.audioEngine && cc.audioEngine.end();
 
         cc.game.onStart();
+    },
+
+    /**
+     * End game, it will close the game window
+     */
+    end: function () {
+        close();
     },
 
 //  @Game loading
@@ -2569,15 +2638,6 @@ cc.game = /** @lends cc.game# */{
         localCanvas.setAttribute("width", width || 480);
         localCanvas.setAttribute("height", height || 320);
         localCanvas.setAttribute("tabindex", 99);
-        localCanvas.style.outline = "none";
-        localConStyle = localContainer.style;
-        localConStyle.width = (width || 480) + "px";
-        localConStyle.height = (height || 320) + "px";
-        localConStyle.margin = "0 auto";
-
-        localConStyle.position = 'relative';
-        localConStyle.overflow = 'hidden';
-        localContainer.top = '100%';
 
         if (cc._renderType === cc.game.RENDER_TYPE_WEBGL) {
             this._renderContext = cc._renderContext = cc.webglContext
@@ -2585,19 +2645,20 @@ cc.game = /** @lends cc.game# */{
                 'stencil': true,
                 'preserveDrawingBuffer': true,
                 'antialias': !cc.sys.isMobile,
-                'alpha': true
+                'alpha': false
             });
         }
         // WebGL context created successfully
         if (this._renderContext) {
             cc.renderer = cc.rendererWebGL;
             win.gl = this._renderContext; // global variable declared in CCMacro.js
+            cc.renderer.init();
             cc.shaderCache._init();
             cc._drawingUtil = new cc.DrawingPrimitiveWebGL(this._renderContext);
             cc.textureCache._initializingRenderer();
-            // cc.glExt = {};
-            // cc.glExt.instanced_arrays = gl.getExtension("ANGLE_instanced_arrays");
-            // cc.glExt.element_uint = gl.getExtension("OES_element_index_uint");
+            cc.glExt = {};
+            cc.glExt.instanced_arrays = gl.getExtension("ANGLE_instanced_arrays");
+            cc.glExt.element_uint = gl.getExtension("OES_element_index_uint");
         } else {
             cc.renderer = cc.rendererCanvas;
             this._renderContext = cc._renderContext = new cc.CanvasContextWrapper(localCanvas.getContext("2d"));

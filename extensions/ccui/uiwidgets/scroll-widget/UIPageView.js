@@ -56,21 +56,10 @@ ccui.PageView = ccui.ListView.extend(/** @lends ccui.PageView# */{
         this._indicatorPositionAsAnchorPoint = cc.p(0.5, 0.1);
         this._pageViewEventListener = null;
         this._pageViewEventSelector = null;
-    },
 
-    /**
-     * Initializes a ccui.PageView. Please do not call this function by yourself, you should pass the parameters to constructor to initialize it.
-     * @returns {boolean}
-     */
-    init: function () {
-        if (ccui.ListView.prototype.init.call(this)) {
-            this.setDirection(ccui.ScrollView.DIR_HORIZONTAL);
-            this.setMagneticType(ccui.ListView.MAGNETIC_CENTER);
-            this.setScrollBarEnabled(false);
-
-            return true;
-        }
-        return false;
+        this.setDirection(ccui.ScrollView.DIR_HORIZONTAL);
+        this.setMagneticType(ccui.ListView.MAGNETIC_CENTER);
+        this.setScrollBarEnabled(false);
     },
 
     /**
@@ -544,6 +533,65 @@ ccui.PageView = ccui.ListView.extend(/** @lends ccui.PageView# */{
     {
         cc.assert(this._indicator !== null, "");
         return this._indicator.getSelectedIndexColor();
+    },
+
+    /**
+     * Set color of page indicator's index nodes.
+     * @param {cc.Color} color Color for indicator
+     */
+    setIndicatorIndexNodesColor: function(color)
+    {
+        if(this._indicator)
+        {
+            this._indicator.setIndexNodesColor(color);
+        }
+    },
+
+    /**
+     * Get the color of page indicator's index nodes.
+     * @returns {cc.Color}
+     */
+    getIndicatorIndexNodesColor: function()
+    {
+        cc.assert(this._indicator !== null, "");
+        return this._indicator.getIndexNodesColor();
+    },
+
+    /**
+     * Set scale of page indicator's index nodes.
+     * @param {Number} scale Scale for indicator
+     */
+    setIndicatorIndexNodesScale: function(indexNodesScale)
+    {
+        if(this._indicator)
+        {
+            this._indicator.setIndexNodesScale(indexNodesScale);
+            this._indicator.indicate(this._curPageIdx);
+        }
+    },
+
+    /**
+     * Get the scale of page indicator's index nodes.
+     * @returns {Number}
+     */
+    getIndicatorIndexNodesScale: function()
+    {
+        cc.assert(this._indicator !== null, "");
+        return this._indicator.getIndexNodesScale();
+    },
+
+    /**
+     * Sets texture of indicator index nodes
+     * @param {String} texName
+     * @param {ccui.Widget.LOCAL_TEXTURE | ccui.Widget.PLIST_TEXTURE} [texType = ccui.Widget.LOCAL_TEXTURE]
+     */
+    setIndicatorIndexNodesTexture: function(texName, texType)
+    {
+        if(this._indicator)
+        {
+            this._indicator.setIndexNodesTexture(texName, texType);
+            this._indicator.indicate(this._curPageIdx);
+        }
     }
 });
 /**
